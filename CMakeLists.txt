@@ -2,7 +2,15 @@
 # Distributed under the MIT license.
 
 cmake_minimum_required(VERSION 3.23)
-project(terminal)
+project(terminal C CXX)
+
+if (NOT "${CMAKE_C_COMPILER_ID}" STREQUAL "Clang")
+    message(FATAL_ERROR "terminal/dxgmx requires clang!")
+endif()
+
+if (NOT "${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+    message(FATAL_ERROR "terminal/dxgmx requires clang++!")
+endif()
 
 set(TERMINAL_SOURCE_DIR ${CMAKE_SOURCE_DIR})
 set(TERMINAL_SYSROOT ${TERMINAL_SOURCE_DIR}/sysroot)
@@ -39,20 +47,35 @@ ExternalProject_Add(
     DEPENDS sysroot-ensure-mounted
 )
 
-add_custom_target(terminal_core DEPENDS dxgmx)
+function (terminal_core_depends_on t)
+    add_dependencies(terminal_core ${t})
+endfunction()
+
+add_custom_target(terminal_core)
+terminal_core_depends_on(dxgmx)
+
+add_custom_target(terminal_apps)
+add_dependencies(terminal_apps terminal_core)
+
+function (terminal_add_project_app)
+    add_dependencies(${PROJECT_NAME} terminal_core)
+    add_dependencies(terminal_apps ${PROJECT_NAME})
+endfunction()
+
+function (terminal_add_app t)
+    add_dependencies(${t} terminal_core)
+    add_dependencies(terminal_apps ${t})
+endfunction()
+
+add_custom_target(terminal_all)
+add_dependencies(terminal_all terminal_apps)
 
 add_subdirectory(lib)
 add_subdirectory(apps)
 
 add_custom_target(
-    sysroot-sync-image
-    COMMAND "sync" "-f" "${TERMINAL_SYSROOT}"
-    USES_TERMINAL
-)
-
-add_custom_target(
     create-grub-iso
-    DEPENDS terminal_core
+    DEPENDS terminal_all
     COMMAND "${TERMINAL_SOURCE_DIR}/tools/create-grub-iso.sh" "--sysroot" "${TERMINAL_SYSROOT}" "--out" "${TERMINAL_SYSTEM_ISO}"
     BYPRODUCTS ${TERMINAL_SYSTEM_ISO}
     USES_TERMINAL
@@ -60,7 +83,8 @@ add_custom_target(
 
 add_custom_target(
     run
-    DEPENDS terminal_core sysroot-sync-image
+    DEPENDS terminal_all
+    COMMAND "sync" "-f" "${TERMINAL_SYSROOT}"
     COMMAND "${TERMINAL_SOURCE_DIR}/tools/run-qemu.sh" "-k" "${TERMINAL_DXGMX_BINARY}"
     USES_TERMINAL
 )
